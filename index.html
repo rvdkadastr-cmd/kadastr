@@ -1600,9 +1600,11 @@ window.RECORDS = [{"id":"z7318868595-20260507","number":"№ 7318868595","date":
   const RECORDS = Array.isArray(window.RECORDS) ? window.RECORDS : [];
   const SOURCE = window.SOURCE || {};
 
-  // Режим просмотра: ?view=1 или #view — без добавления, правки и удаления.
-  const VIEWER =
-    new URLSearchParams(location.search).get("view") === "1" || location.hash === "#view";
+  // По умолчанию сайт открывается в режиме просмотра — так его видят клиенты.
+  // Полный доступ (добавление, правка, удаление) — только по ссылке с ?admin=1.
+  const PARAMS = new URLSearchParams(location.search);
+  const ADMIN = PARAMS.get("admin") === "1";
+  const VIEWER = !ADMIN || PARAMS.get("view") === "1" || location.hash === "#view";
 
   let DATA = [];
   let edits = { added: [], edited: {}, deleted: [] };
@@ -2155,7 +2157,7 @@ window.RECORDS = [{"id":"z7318868595-20260507","number":"№ 7318868595","date":
 
   function shareUrl() {
     if (location.protocol === "file:") return "";
-    return location.href.split("#")[0];
+    return location.href.split("#")[0].split("?")[0];
   }
 
   function renderAccess() {
