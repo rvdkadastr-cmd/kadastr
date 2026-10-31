@@ -1372,6 +1372,8 @@ select:hover { border-color: var(--brand-2); }
 
     <div class="topbar-actions">
       <span class="viewer-badge" id="viewerBadge" hidden>Режим просмотра</span>
+      <button class="btn btn-ghost" id="btnLogin" type="button" hidden>Войти</button>
+      <button class="btn btn-ghost" id="btnLogout" type="button" hidden>Выйти</button>
       <label class="search">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5" /><path d="m16 16 4 4" /></svg>
         <input id="search" type="search" placeholder="Номер, клиент, специалист…" autocomplete="off" aria-label="Поиск по реестру" />
@@ -1418,7 +1420,6 @@ select:hover { border-color: var(--brand-2); }
         <div class="toolbar-right">
           <select id="filterSpecialist" aria-label="Ведущий специалист"></select>
           <select id="filterMonth" aria-label="Месяц регистрации"></select>
-          <button class="btn btn-ghost btn-sm" id="btnResetEdits" type="button" hidden>Сбросить правки</button>
           <button class="btn btn-ghost btn-sm" id="btnReset" type="button">Сбросить</button>
         </div>
       </div>
@@ -1549,6 +1550,27 @@ select:hover { border-color: var(--brand-2); }
     </div>
   </div>
 
+  <div class="modal-wrap" id="loginWrap" hidden>
+    <div class="modal modal-sm" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
+      <div class="modal-head">
+        <h2 id="loginTitle">Вход для администратора</h2>
+        <button class="icon-btn" id="loginClose" type="button" aria-label="Закрыть">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+        </button>
+      </div>
+      <form class="modal-body" id="loginForm">
+        <div class="field">
+          <label for="loginPass">Пароль</label>
+          <input id="loginPass" type="password" autocomplete="current-password" placeholder="Введите пароль" />
+        </div>
+        <p class="chat-status is-error" id="loginError" hidden></p>
+        <div class="form-foot">
+          <button class="btn btn-primary" id="loginSubmit" type="submit">Войти</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <div class="toasts" id="toasts" aria-live="polite"></div>
 
   <script>
@@ -1572,7 +1594,8 @@ window.RECORDS = [{"id":"z7318868595-20260507","number":"№ 7318868595","date":
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
   const STORE_TEAM = "adresacia-team-v1";
-  const STORE_EDITS = "adresacia-edits-v1";
+  const STORE_PASS = "kadastr-pass";
+  const API_URL = "https://script.google.com/macros/s/AKfycbw3Ebx6ShO19c3DaIjg63lpL_o8bIb4yQ-t8SzBMy2i09eLuDgJ2_3Dm5diXxceYEGG/exec";
 
   const STATUS = {
     review:    { label: "На рассмотрении", color: "#4f93bd" },
@@ -1600,14 +1623,18 @@ window.RECORDS = [{"id":"z7318868595-20260507","number":"№ 7318868595","date":
   const RECORDS = Array.isArray(window.RECORDS) ? window.RECORDS : [];
   const SOURCE = window.SOURCE || {};
 
-  // По умолчанию сайт открывается в режиме просмотра — так его видят клиенты.
-  // Полный доступ (добавление, правка, удаление) — только по ссылке с ?admin=1.
+  // Клиенты видят сайт только для чтения. Администратор входит по паролю
+  // по ссылке ?admin=1. Данные читаются и пишутся через Google Apps Script.
   const PARAMS = new URLSearchParams(location.search);
-  const ADMIN = PARAMS.get("admin") === "1";
-  const VIEWER = !ADMIN || PARAMS.get("view") === "1" || location.hash === "#view";
+  const ADMIN_MODE = PARAMS.get("admin") === "1";
+  let loggedIn = Boolean(sessionStorage.getItem(STORE_PASS));
 
-  let DATA = [];
-  let edits = { added: [], edited: {}, deleted: [] };
+  function isViewer() {
+    return !ADMIN_MODE || !loggedIn || PARAMS.get("view") === "1" || location.hash === "#view";
+  }
+
+  let DATA = RECORDS.slice();
+  let apiOk = false;
   let team = [];
 
   const state = {
@@ -1693,45 +1720,69 @@ window.RECORDS = [{"id":"z7318868595-20260507","number":"№ 7318868595","date":
 
   /* ---------- Хранилище ---------- */
 
-  function loadEdits() {
+  function normalize(r) {
+    return {
+      id: String(r.id || ""),
+      number: String(r.number || ""),
+      date: String(r.date || ""),
+      client: String(r.client || ""),
+      representative: String(r.representative || ""),
+      status: STATUS[r.status] ? r.status : "none",
+      specialist: String(r.specialist || "Не назначен"),
+      note: String(r.note || "")
+    };
+  }
+
+  async function loadData() {
     try {
-      const raw = localStorage.getItem(STORE_EDITS);
-      const parsed = raw ? JSON.parse(raw) : null;
-      if (parsed && Array.isArray(parsed.added) && parsed.edited && typeof parsed.edited === "object") {
-        edits = {
-          added: parsed.added,
-          edited: parsed.edited,
-          deleted: Array.isArray(parsed.deleted) ? parsed.deleted : []
-        };
+      const res = await fetch(API_URL + "?action=list&t=" + Date.now(), { cache: "no-store" });
+      const data = await res.json();
+      if (data && data.ok && Array.isArray(data.records)) {
+        DATA = data.records.map(normalize);
+        apiOk = true;
+        return true;
       }
     } catch (err) {
-      edits = { added: [], edited: {}, deleted: [] };
+      /* нет связи — остаёмся на встроенных данных */
     }
+    apiOk = false;
+    return false;
   }
 
-  function saveEdits() {
-    try {
-      localStorage.setItem(STORE_EDITS, JSON.stringify(edits));
-    } catch (err) {
-      toast("Не удалось сохранить изменения в браузере", true);
+  async function apiSave(record) {
+    const body = new URLSearchParams();
+    body.set("password", sessionStorage.getItem(STORE_PASS) || "");
+    body.set("action", "upsert");
+    body.set("record", JSON.stringify(record));
+    const res = await fetch(API_URL, { method: "POST", body: body });
+    const data = await res.json();
+    if (!data.ok) {
+      throw new Error(data.error === "wrong password" ? "неверный пароль" : (data.error || "ошибка сохранения"));
     }
+    return data;
   }
 
-  function rebuildData() {
-    if (VIEWER) {
-      DATA = RECORDS.slice();
-      return;
+  async function apiDelete(id) {
+    const body = new URLSearchParams();
+    body.set("password", sessionStorage.getItem(STORE_PASS) || "");
+    body.set("action", "delete");
+    body.set("id", id);
+    const res = await fetch(API_URL, { method: "POST", body: body });
+    const data = await res.json();
+    if (!data.ok) {
+      throw new Error(data.error === "wrong password" ? "неверный пароль" : (data.error || "ошибка удаления"));
     }
-    const base = RECORDS.map((r) => {
-      const patch = edits.edited[r.id];
-      return patch ? Object.assign({}, r, patch, { _edited: true }) : r;
-    });
-    const added = edits.added.map((r) => Object.assign({}, r, { _added: true }));
-    DATA = added.concat(base).filter((r) => edits.deleted.indexOf(r.id) === -1);
+    return data;
   }
 
-  function localCount() {
-    return edits.added.length + Object.keys(edits.edited).length + edits.deleted.length;
+  async function checkPassword(pass) {
+    const body = new URLSearchParams();
+    body.set("password", pass);
+    body.set("action", "delete");
+    body.set("id", "__check__");
+    const res = await fetch(API_URL, { method: "POST", body: body });
+    const data = await res.json();
+    return data.error !== "wrong password";
   }
 
   function loadTeam() {
@@ -1885,12 +1936,6 @@ window.RECORDS = [{"id":"z7318868595-20260507","number":"№ 7318868595","date":
       months.map((m) => `<option value="${m}">${esc(monthLabel(m))}</option>`).join("");
     monthSel.value = state.month;
 
-    const resetBtn = $("#btnResetEdits");
-    if (resetBtn) {
-      const n = localCount();
-      resetBtn.hidden = n === 0;
-      resetBtn.textContent = "Сбросить правки (" + n + ")";
-    }
   }
 
   /* ---------- Таблица ---------- */
@@ -2443,18 +2488,20 @@ window.RECORDS = [{"id":"z7318868595-20260507","number":"№ 7318868595","date":
     });
   }
 
-  function deleteRecord(record) {
-    if (record._added) {
-      edits.added = edits.added.filter((r) => r.id !== record.id);
-    } else {
-      if (edits.deleted.indexOf(record.id) === -1) edits.deleted.push(record.id);
-      delete edits.edited[record.id];
+  async function deleteRecord(record) {
+    if (!apiOk) {
+      toast("Нет связи с таблицей. Проверьте интернет.", true);
+      return;
     }
-    saveEdits();
-    rebuildData();
-    closeDrawer();
-    renderAll();
-    toast("Заявление " + record.number + " удалено");
+    try {
+      await apiDelete(record.id);
+      await loadData();
+      closeDrawer();
+      renderAll();
+      toast("Заявление " + record.number + " удалено");
+    } catch (err) {
+      toast("Не удалось удалить: " + err.message, true);
+    }
   }
 
   /* ---------- Форма ---------- */
@@ -2526,7 +2573,7 @@ window.RECORDS = [{"id":"z7318868595-20260507","number":"№ 7318868595","date":
       <datalist id="specList">${specialists.map((s) => `<option value="${esc(s)}"></option>`).join("")}</datalist>
       <div class="form-foot">
         <button class="btn btn-ghost" type="button" id="formCancel">Отмена</button>
-        <button class="btn btn-primary" type="submit">${record ? "Сохранить" : "Добавить в реестр"}</button>
+        <button class="btn btn-primary" id="formSubmit" type="submit">${record ? "Сохранить" : "Добавить в реестр"}</button>
       </div>`;
 
     $("#modalWrap").hidden = false;
@@ -2553,15 +2600,17 @@ window.RECORDS = [{"id":"z7318868595-20260507","number":"№ 7318868595","date":
     if (err) err.textContent = message || "";
   }
 
-  function onSubmit(e) {
+  async function onSubmit(e) {
     e.preventDefault();
 
+    const editing = state.editingId;
     const val = (id) => {
       const el = $("#" + id);
       return el ? el.value.trim() : "";
     };
 
     const data = {
+      id: editing || ("z" + Date.now()),
       number: val("f-number"),
       date: val("f-date"),
       client: val("f-client"),
@@ -2582,34 +2631,30 @@ window.RECORDS = [{"id":"z7318868595-20260507","number":"№ 7318868595","date":
     });
     if (!ok) return;
 
-    if (state.editingId) {
-      const record = DATA.find((r) => r.id === state.editingId);
-      if (record && record._added) {
-        const idx = edits.added.findIndex((r) => r.id === record.id);
-        if (idx >= 0) edits.added[idx] = Object.assign({}, edits.added[idx], data);
-      } else if (record) {
-        edits.edited[record.id] = Object.assign({}, edits.edited[record.id], data);
-      }
-      toast("Изменения сохранены");
-    } else {
-      edits.added.unshift(
-        Object.assign(
-          { id: "local-" + Date.now(), dateRaw: "", dateSuspect: false, statusRaw: "" },
-          data
-        )
-      );
-      toast("Заявление " + data.number + " добавлено");
+    if (!apiOk) {
+      toast("Нет связи с таблицей. Проверьте интернет.", true);
+      return;
     }
 
-    saveEdits();
-    rebuildData();
-    closeForm();
-    renderAll();
+    const submitBtn = $("#formSubmit");
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Сохраняем…";
+    }
 
-    if (state.selectedId) {
-      const still = DATA.find((r) => r.id === state.selectedId);
-      if (still) renderDrawer(still);
-      else closeDrawer();
+    try {
+      await apiSave(data);
+      await loadData();
+      closeForm();
+      renderAll();
+      toast(editing ? "Изменения сохранены" : "Заявление " + data.number + " добавлено");
+    } catch (err) {
+      toast("Не удалось сохранить: " + err.message, true);
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = editing ? "Сохранить" : "Добавить в реестр";
+      }
     }
   }
 
@@ -2665,7 +2710,7 @@ window.RECORDS = [{"id":"z7318868595-20260507","number":"№ 7318868595","date":
   /* ---------- Навигация ---------- */
 
   function setView(view) {
-    if (VIEWER && view === "access") view = "registry";
+    if (isViewer() && view === "access") view = "registry";
     state.view = view;
     $$(".nav-item").forEach((b) => b.classList.toggle("is-active", b.dataset.view === view));
     $("#view-registry").hidden = view !== "registry";
@@ -2681,6 +2726,7 @@ window.RECORDS = [{"id":"z7318868595-20260507","number":"№ 7318868595","date":
   }
 
   function renderAll() {
+    applyMode();
     renderIntro();
     renderFilters();
     renderTable();
@@ -2750,29 +2796,6 @@ window.RECORDS = [{"id":"z7318868595-20260507","number":"№ 7318868595","date":
     $("#btnExport").addEventListener("click", exportCsv);
     $("#btnNew").addEventListener("click", () => openForm(null));
 
-    const resetEdits = $("#btnResetEdits");
-    let armed = false;
-    let armTimer = null;
-    resetEdits.addEventListener("click", () => {
-      if (!armed) {
-        armed = true;
-        resetEdits.textContent = "Точно сбросить?";
-        clearTimeout(armTimer);
-        armTimer = setTimeout(() => {
-          armed = false;
-          renderFilters();
-        }, 4000);
-        return;
-      }
-      armed = false;
-      clearTimeout(armTimer);
-      edits = { added: [], edited: {}, deleted: [] };
-      saveEdits();
-      rebuildData();
-      renderAll();
-      toast("Локальные правки сброшены");
-    });
-
     $$(".grid thead th.sortable").forEach((th) => {
       th.addEventListener("click", () => {
         const key = th.dataset.sort;
@@ -2799,9 +2822,25 @@ window.RECORDS = [{"id":"z7318868595-20260507","number":"№ 7318868595","date":
       if (e.target === $("#modalWrap")) closeForm();
     });
 
+    const loginBtn = $("#btnLogin");
+    if (loginBtn) loginBtn.addEventListener("click", openLogin);
+    const logoutBtn = $("#btnLogout");
+    if (logoutBtn) logoutBtn.addEventListener("click", logout);
+    const loginClose = $("#loginClose");
+    if (loginClose) loginClose.addEventListener("click", closeLogin);
+    const loginForm = $("#loginForm");
+    if (loginForm) loginForm.addEventListener("submit", onLogin);
+    const loginWrap = $("#loginWrap");
+    if (loginWrap) {
+      loginWrap.addEventListener("click", (e) => {
+        if (e.target === loginWrap) closeLogin();
+      });
+    }
+
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape") {
-        if (!$("#modalWrap").hidden) closeForm();
+        if (!$("#loginWrap").hidden) closeLogin();
+        else if (!$("#modalWrap").hidden) closeForm();
         else if (!$("#drawer").hidden) closeDrawer();
       }
       if (e.key === "/" && document.activeElement.tagName !== "INPUT" && document.activeElement.tagName !== "TEXTAREA") {
@@ -3013,21 +3052,92 @@ window.RECORDS = [{"id":"z7318868595-20260507","number":"№ 7318868595","date":
     }
   }
 
+  /* ---------- Вход администратора ---------- */
+
+  function applyMode() {
+    const viewer = isViewer();
+    document.body.classList.toggle("is-viewer", viewer);
+    const badge = $("#viewerBadge");
+    if (badge) badge.hidden = !viewer;
+    const loginBtn = $("#btnLogin");
+    if (loginBtn) loginBtn.hidden = !ADMIN_MODE || loggedIn;
+    const logoutBtn = $("#btnLogout");
+    if (logoutBtn) logoutBtn.hidden = !ADMIN_MODE || !loggedIn;
+  }
+
+  function openLogin() {
+    const wrap = $("#loginWrap");
+    if (!wrap) return;
+    wrap.hidden = false;
+    const err = $("#loginError");
+    if (err) err.hidden = true;
+    const pass = $("#loginPass");
+    if (pass) {
+      pass.value = "";
+      setTimeout(() => pass.focus(), 60);
+    }
+  }
+
+  function closeLogin() {
+    const wrap = $("#loginWrap");
+    if (wrap) wrap.hidden = true;
+  }
+
+  async function onLogin(e) {
+    e.preventDefault();
+    const passEl = $("#loginPass");
+    const errEl = $("#loginError");
+    const btn = $("#loginSubmit");
+    const pass = passEl ? passEl.value : "";
+    if (!pass) return;
+
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "Проверяем…";
+    }
+    try {
+      const ok = await checkPassword(pass);
+      if (!ok) {
+        if (errEl) {
+          errEl.hidden = false;
+          errEl.textContent = "Неверный пароль";
+        }
+        return;
+      }
+      sessionStorage.setItem(STORE_PASS, pass);
+      loggedIn = true;
+      closeLogin();
+      renderAll();
+      toast("Вы вошли как администратор");
+    } catch (err) {
+      if (errEl) {
+        errEl.hidden = false;
+        errEl.textContent = "Нет связи с таблицей";
+      }
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = "Войти";
+      }
+    }
+  }
+
+  function logout() {
+    sessionStorage.removeItem(STORE_PASS);
+    loggedIn = false;
+    renderAll();
+    toast("Вы вышли");
+  }
+
   /* ---------- Старт ---------- */
 
-  loadEdits();
-  rebuildData();
   loadTeam();
   bind();
   initChat();
-
-  if (VIEWER) {
-    document.body.classList.add("is-viewer");
-    const badge = $("#viewerBadge");
-    if (badge) badge.hidden = false;
-  }
-
+  applyMode();
   renderAll();
+
+  loadData().then(() => renderAll());
 
   const note = $("#sourceNote");
   if (note) {
