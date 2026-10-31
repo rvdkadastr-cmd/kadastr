@@ -1511,6 +1511,13 @@ select:hover { border-color: var(--brand-2); }
 .chip.is-active { background: #2a4a3a; border-color: #2a4a3a; color: #ffffff; }
 .page-btn.is-active { background: #2a4a3a; border-color: #2a4a3a; }
 
+/* При вводе поле не должно становиться белым — иначе белый текст пропадает */
+.search:focus-within {
+  background: rgba(255, 255, 255, 0.18) !important;
+  border-color: #b08a4a !important;
+  box-shadow: 0 0 0 3px rgba(176, 138, 74, 0.25);
+}
+
 /* На телефоне название компании мельче, чтобы шапка не расползалась */
 @media (max-width: 720px) {
   .brand-name { font-size: 16px; letter-spacing: 0.03em; }
