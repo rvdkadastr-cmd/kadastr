@@ -167,7 +167,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .is-viewer #btnResetEdits,
 .is-viewer #drawerEdit,
 .is-viewer #drawerDelete,
-.is-viewer .nav-item[data-view="access"] {
+.is-viewer .nav-item[data-view="access"],
+.is-viewer .nav-item[data-view="analytics"] {
   display: none !important;
 }
 
@@ -1398,8 +1399,8 @@ select:hover { border-color: var(--brand-2); }
   .pager { justify-content: center; }
 
   .brand-sub { display: none; }
-  .brand-name { font-size: 14px; }
-  .topbar { padding: 10px 14px; }
+  .brand-name { font-size: 16px; letter-spacing: 0.03em; }
+  .topbar { padding: 14px 16px; gap: 12px; }
 
   .chat-panel { width: calc(100vw - 28px); }
 
@@ -1489,6 +1490,12 @@ select:hover { border-color: var(--brand-2); }
 .btn-primary { background: #2a4a3a; }
 .chip.is-active { background: #2a4a3a; border-color: #2a4a3a; color: #ffffff; }
 .page-btn.is-active { background: #2a4a3a; border-color: #2a4a3a; }
+
+/* На телефоне название компании мельче, чтобы шапка не расползалась */
+@media (max-width: 720px) {
+  .brand-name { font-size: 16px; letter-spacing: 0.03em; }
+  .topbar { padding: 14px 16px; }
+}
 
 </style>
 </head>
@@ -1881,6 +1888,7 @@ window.RECORDS = [{"id":"z7318868595-20260507","number":"№ 7318868595","date":
         const changed = JSON.stringify(next) !== JSON.stringify(DATA);
         DATA = next;
         apiOk = true;
+        saveCache();
         return changed;
       }
     } catch (err) {
@@ -1888,6 +1896,32 @@ window.RECORDS = [{"id":"z7318868595-20260507","number":"№ 7318868595","date":
     }
     apiOk = false;
     return false;
+  }
+
+  const CACHE_KEY = "kadastr-cache-v1";
+
+  function loadCache() {
+    try {
+      const raw = localStorage.getItem(CACHE_KEY);
+      if (raw) {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr) && arr.length) {
+          DATA = arr.map(normalize);
+          return true;
+        }
+      }
+    } catch (err) {
+      /* кэш повреждён — не страшно */
+    }
+    return false;
+  }
+
+  function saveCache() {
+    try {
+      localStorage.setItem(CACHE_KEY, JSON.stringify(DATA));
+    } catch (err) {
+      /* нет места — не страшно */
+    }
   }
 
   async function apiSave(record) {
@@ -2166,7 +2200,7 @@ window.RECORDS = [{"id":"z7318868595-20260507","number":"№ 7318868595","date":
             <div class="app-card-client">${esc(r.client || "—")}</div>
             <div class="app-card-meta">
               <span>${esc(fmtDate(r.date))}</span>
-              <span>${esc(r.specialist)}</span>
+              <span>специалист: ${esc(r.specialist)}</span>
             </div>
             ${r.note ? `<div class="app-card-note">${esc(r.note)}</div>` : ""}
           </article>`;
@@ -2876,7 +2910,7 @@ window.RECORDS = [{"id":"z7318868595-20260507","number":"№ 7318868595","date":
   /* ---------- Навигация ---------- */
 
   function setView(view) {
-    if (isViewer() && view === "access") view = "registry";
+    if (isViewer() && (view === "access" || view === "analytics")) view = "registry";
     state.view = view;
     $$(".nav-item").forEach((b) => b.classList.toggle("is-active", b.dataset.view === view));
     $("#view-registry").hidden = view !== "registry";
@@ -3299,6 +3333,7 @@ window.RECORDS = [{"id":"z7318868595-20260507","number":"№ 7318868595","date":
   loadTeam();
   bind();
   initChat();
+  loadCache();
   applyMode();
   renderAll();
 
