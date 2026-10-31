@@ -1161,6 +1161,10 @@ select:hover { border-color: var(--brand-2); }
 
 .form-foot .btn { min-width: 130px; justify-content: center; }
 
+.not-found-text { margin: 0 0 8px; font-size: 15px; color: var(--ink); line-height: 1.5; }
+.not-found-text b { color: var(--brand); }
+.not-found-hint { margin: 0 0 18px; font-size: 13px; color: var(--muted); line-height: 1.55; }
+
 /* ---------- Тосты ---------- */
 
 .toasts {
@@ -1762,6 +1766,24 @@ select:hover { border-color: var(--brand-2); }
     </div>
   </div>
 
+  <div class="modal-wrap" id="notFoundWrap" hidden>
+    <div class="modal modal-sm" role="dialog" aria-modal="true" aria-labelledby="notFoundTitle">
+      <div class="modal-head">
+        <h2 id="notFoundTitle">Сведения не найдены</h2>
+        <button class="icon-btn" id="notFoundClose" type="button" aria-label="Закрыть">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <p class="not-found-text" id="notFoundText"></p>
+        <p class="not-found-hint">Проверьте номер заявления или фамилию клиента. Если заявление подано недавно, оно может появиться в реестре позже.</p>
+        <div class="form-foot">
+          <button class="btn btn-primary" id="notFoundOk" type="button">Понятно</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="toasts" id="toasts" aria-live="polite"></div>
 
   <script>
@@ -2039,6 +2061,19 @@ window.RECORDS = [{"id":"z7318868595-20260507","number":"№ 7318868595","date":
         .join(" ")
         .toLowerCase();
       return hay.indexOf(q) !== -1;
+    });
+  }
+
+  // Поиск по всему реестру, без учёта фильтров — чтобы окно «не найдено»
+  // не срабатывало из-за выбранного статуса или месяца.
+  function searchAll(q) {
+    const needle = q.trim().toLowerCase();
+    if (!needle) return [];
+    return DATA.filter((r) => {
+      const hay = [r.number, r.client, r.representative, r.specialist, r.note, STATUS[statusOf(r)].label]
+        .join(" ")
+        .toLowerCase();
+      return hay.indexOf(needle) !== -1;
     });
   }
 
@@ -2837,6 +2872,18 @@ window.RECORDS = [{"id":"z7318868595-20260507","number":"№ 7318868595","date":
     if ($("#drawer").hidden) document.body.style.overflow = "";
   }
 
+  function showNotFound(q) {
+    $("#notFoundText").innerHTML = "По запросу «<b>" + esc(q) + "</b>» ничего не найдено.";
+    $("#notFoundWrap").hidden = false;
+    document.body.style.overflow = "hidden";
+  }
+
+  function hideNotFound() {
+    if ($("#notFoundWrap").hidden) return;
+    $("#notFoundWrap").hidden = true;
+    if ($("#drawer").hidden && $("#modalWrap").hidden) document.body.style.overflow = "";
+  }
+
   function markError(id, message) {
     const wrap = document.querySelector('[data-field="' + id + '"]');
     if (!wrap) return;
@@ -2987,11 +3034,31 @@ window.RECORDS = [{"id":"z7318868595-20260507","number":"№ 7318868595","date":
       btn.addEventListener("click", () => setView(btn.dataset.view));
     });
 
+    let searchTimer = null;
     $("#search").addEventListener("input", (e) => {
       state.q = e.target.value;
       state.page = 1;
       renderTable();
       if (state.view === "board") renderBoard();
+
+      clearTimeout(searchTimer);
+      const q = state.q.trim();
+      if (!q) {
+        hideNotFound();
+        return;
+      }
+      // Небольшая пауза, чтобы карточка не открывалась на каждой букве.
+      searchTimer = setTimeout(() => {
+        const found = searchAll(q);
+        if (found.length === 1) {
+          hideNotFound();
+          openDrawer(found[0].id);
+        } else if (found.length === 0) {
+          showNotFound(q);
+        } else {
+          hideNotFound();
+        }
+      }, 500);
     });
 
     $("#statusChips").addEventListener("click", (e) => {
@@ -3081,9 +3148,21 @@ window.RECORDS = [{"id":"z7318868595-20260507","number":"№ 7318868595","date":
       });
     }
 
+    const notFoundClose = $("#notFoundClose");
+    if (notFoundClose) notFoundClose.addEventListener("click", hideNotFound);
+    const notFoundOk = $("#notFoundOk");
+    if (notFoundOk) notFoundOk.addEventListener("click", hideNotFound);
+    const notFoundWrap = $("#notFoundWrap");
+    if (notFoundWrap) {
+      notFoundWrap.addEventListener("click", (e) => {
+        if (e.target === notFoundWrap) hideNotFound();
+      });
+    }
+
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape") {
         if (!$("#loginWrap").hidden) closeLogin();
+        else if (!$("#notFoundWrap").hidden) hideNotFound();
         else if (!$("#modalWrap").hidden) closeForm();
         else if (!$("#drawer").hidden) closeDrawer();
       }
