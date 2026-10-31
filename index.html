@@ -1344,6 +1344,74 @@ select:hover { border-color: var(--brand-2); }
   }
 }
 
+/* ---------- Карточки для телефона ---------- */
+
+.card-list { display: none; }
+
+.app-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px 14px;
+  cursor: pointer;
+  transition: box-shadow 0.15s ease;
+}
+
+.app-card:active { box-shadow: var(--shadow-md); }
+
+.app-card-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.app-card-client { margin-top: 8px; font-size: 14px; font-weight: 500; line-height: 1.35; }
+.app-card-meta { margin-top: 6px; display: flex; gap: 12px; font-size: 11.5px; color: var(--muted); }
+
+.app-card-note {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--ink-2);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+@media (max-width: 720px) {
+  .table-scroll { display: none; }
+  .card-list { display: flex; flex-direction: column; gap: 10px; padding: 12px; }
+
+  .topbar-actions { width: 100%; flex-wrap: wrap; }
+  .search { flex: 1 1 100%; order: -1; min-width: 0; }
+  .chips { min-width: 0; max-width: 100%; }
+
+  .intro { padding: 22px 16px 0; }
+  .intro h1 { font-size: 26px; }
+  .intro-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .istat { padding: 10px 12px; }
+  .istat-value { font-size: 20px; }
+
+  .main { padding: 14px 14px 28px; }
+
+  .chips { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; }
+  .chip { flex: none; }
+  .toolbar-right { width: 100%; }
+  .toolbar-right select { flex: 1; min-width: 0; }
+
+  .table-foot { flex-direction: column; align-items: stretch; gap: 10px; }
+  .pager { justify-content: center; }
+
+  .brand-sub { display: none; }
+  .brand-name { font-size: 14px; }
+  .topbar { padding: 10px 14px; }
+
+  .chat-panel { width: calc(100vw - 28px); }
+
+  .btn { min-height: 44px; }
+  .btn-sm { min-height: 38px; }
+}
+
+@media (max-width: 480px) {
+  #btnNew { font-size: 0; gap: 0; padding: 0 12px; }
+  #btnNew svg { width: 18px; height: 18px; }
+}
+
 </style>
 </head>
 <body>
@@ -1441,6 +1509,7 @@ select:hover { border-color: var(--brand-2); }
             <tbody id="tbody"></tbody>
           </table>
         </div>
+        <div class="card-list" id="cardList"></div>
         <div class="empty" id="empty" hidden>
           <p class="empty-title">Ничего не найдено</p>
           <p class="empty-text">Измените запрос или сбросьте фильтры.</p>
@@ -2010,6 +2079,31 @@ window.RECORDS = [{"id":"z7318868595-20260507","number":"№ 7318868595","date":
         }
       });
     });
+
+    const cardList = $("#cardList");
+    if (cardList) {
+      cardList.innerHTML = pageItems
+        .map((r) => {
+          const st = STATUS[statusOf(r)];
+          return `
+          <article class="app-card" data-id="${r.id}">
+            <div class="app-card-top">
+              <span class="num">${esc(r.number)}</span>
+              <span class="pill" style="--tone:${st.color}">${esc(st.label)}</span>
+            </div>
+            <div class="app-card-client">${esc(r.client || "—")}</div>
+            <div class="app-card-meta">
+              <span>${esc(fmtDate(r.date))}</span>
+              <span>${esc(r.specialist)}</span>
+            </div>
+            ${r.note ? `<div class="app-card-note">${esc(r.note)}</div>` : ""}
+          </article>`;
+        })
+        .join("");
+      $$("#cardList .app-card").forEach((card) => {
+        card.addEventListener("click", () => openDrawer(card.dataset.id));
+      });
+    }
 
     renderPager(list.length, totalPages);
   }
